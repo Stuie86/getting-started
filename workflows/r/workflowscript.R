@@ -2,12 +2,14 @@
 library(dplyr)
 library(odbc)
 library(DBI)
-library(tidymodels)
+library(tibble)
+#library(tidymodels)
 
 # Setting some variables
 bucket = Sys.getenv('DATA_LAKE') # For the data lake connection
 filepath = paste0(Sys.getenv('DATA_LAKE_ROOT_PATH') , 'datascience/') # For the data lake connection
 modelname = 'model.rds' # Model name
+
 
 # Connection string for Snowflake
 print("Connecting to Snowflake")
@@ -30,25 +32,26 @@ data = df %>%
   select(-date,
          -city,
          -PEAKAUDITCREATEDAT, 
-         -REQUEST_ID)
+         -PEAKAUDITREQUESTID,
+         -PEAKAUDITFILENAME)
 
 # Building and fitting Linear Regression model. You can change this
 print("Build model")
-linreg_reg_spec <- 
-  linear_reg() %>% 
-  set_engine("lm")
+# linreg_reg_spec <- 
+#   linear_reg() %>% 
+#   set_engine("lm")
+# linreg_reg_fit <- linreg_reg_spec %>% fit(price ~ ., data = data)
 
-linreg_reg_fit <- linreg_reg_spec %>% fit(price ~ ., data = data)
+model.lm <- lm(formula =  price ~ ., data = data)
+
 
 # Predicting on our data and creating a column called predictions
 predictions = df %>%
-  add_column(predict(linreg_reg_fit, data))  
-
-names(predictions)[18] <- 'predictions'
+  mutate(predictions = predict(model.lm, data))  
 
 # Save the model to the data lake using the AWS CLI functionality
 print("Save model to S3")
-saveRDS(linreg_reg_fit, 'model.rds')
+saveRDS(model.lm, 'model.rds')
 system(glue::glue("aws s3 cp 'model.rds' 's3://{bucket}/{filepath}{modelname}'"))
 
 # Changing the data types so that we can save the data to Snowflake
@@ -60,7 +63,8 @@ predictions = predictions %>%
           bathrooms = as.integer(bathrooms), 
           floors = as.integer(floors) ) %>%
   select(-PEAKAUDITCREATEDAT, 
-         -REQUEST_ID)
+         -PEAKAUDITREQUESTID,
+         -PEAKAUDITFILENAME)
 
 # Changing the column names to upper case so that we can save to Snowflake
 names(predictions) <- toupper(names(predictions))
